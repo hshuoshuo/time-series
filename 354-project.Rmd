@@ -1,0 +1,93 @@
+---
+title: "354-project"
+author: "Shuo Han"
+date: "2023-03-10"
+output: pdf_document
+---
+
+# Compare GARCH, ARMA, ARMA+GARCH based on Tesla stock return
+
+# 1.
+## import and analyze data
+```{r}
+library(tseries)
+
+# Load the data and calculate the returns
+tsla <- as.vector(get.hist.quote(instrument="TSLA", start="2017-12-01", end="2022-12-31",quote="AdjClose", compression="d"))
+plot(tsla, type="l")
+rt <- diff(log(tsla),1)
+# plot the return
+plot(rt, type="l", main= 'return')
+
+# Plot the ACF and PACF of the returns
+par(mfrow=c(1,2))
+acf(rt, lag.max=30, main="ACF of Tesla Stock Returns")
+pacf(rt, lag.max=30, main="PACF of Tesla Stock Returns")
+
+acf(rt^2, lag.max=30, main="ACF of squared Tesla Stock Returns")
+pacf(rt^2, lag.max=30, main="PACF of squared Tesla Stock Returns")
+```
+For this project, I used the data of the stock price of Tesla incorporation from 2018 to 2022.
+The time series plot appears in clusters, so there may be dependence in the data. And it shows irregular fluctuations, there are peaks and troughs at certain time. It shows repeated up and down cycle. It shows there is a continuous upward trend before the year 2022, and a downward trend at 2022. It shows non-stationarity in the time series plot. In order to achieve stationarity, we calculate the return based on the stock prices by calculating the return of the stock using diff(log()).
+
+According to the plot of the return, we can see that the returns randomly fluctuate around zero, so the data appear fairly stationary, corresponding to the ACF plot with fairly low ACF. It fluctuates most seriously at around year 2020. The returns shows conditional heteroskedasticity since we observe volatility clustering, meaning that periods of high volatility tend to be followed by more periods of high volatility, and periods of low volatility tend to be followed by more periods of low volatility, thus we can fit a GARCH model for the data of Tsla stock return from 2018 to 2022.
+
+The ACF of the return is 1 at lag 1, and it cuts off quickly at lag 2, and it keeps fairly low around 0, so the time series may be stationary, corresponds to the plot of return. Also, all the PACF all fairly small in the PACF plot of the return. Since the data appear fairly stationary, and we may fit a ARMA model for the data of Tsla stock return from 2018 to 2022.
+
+The ACF and PACF of the squared returns are fairly high, which represent the significant autocorrelations between the squared log returns and their lagged values, and we can see the presence of volatility clustering from this. So we may use a GARCH model for the data of Tsla stock return from 2018 to 2022.
+
+
+# 2
+## fit arma model for the return
+```{r warning=FALSE}
+library(fGarch)
+summary(fit<- garchFit(~garch(1,0), data=rt, cond.dist='std', trace=FALSE))
+summary(fit<- garchFit(~garch(1,1), data=rt, cond.dist='std', trace=FALSE))
+summary(fit<- garchFit(~garch(2,0), data=rt, cond.dist='std', trace=FALSE))
+summary(fit<- garchFit(~garch(2,1), data=rt, cond.dist='std', trace=FALSE))
+summary(fit<- garchFit(~garch(1,2), data=rt, cond.dist='std', trace=FALSE))
+```
+By comparing the AIC of these GARCH models above, we can see that the model GARCH(1,1) has the lowest AIC, -3.774, and so we can explain the data better with the GARCH(1,0) model.
+
+
+# 3
+## try to fit arma model for the return to compare
+```{r warning=FALSE}
+library(astsa)
+aic=sarima(rt,0,0,0, details = FALSE, trace=FALSE)$fit$aic
+minAICp=0
+minAICq=0
+for(p in seq(0,5)){
+  for(q in seq(0,7)){
+    fit=sarima(rt,p,0,q, details = FALSE, trace=FALSE)
+    if(fit$fit$aic < aic){
+      aic=fit$fit$aic
+      minAICp=p
+      minAICq=q
+    }
+  }
+}
+minAICp
+minAICq
+a4m5 <- sarima(rt,minAICp,0,minAICq, details = FALSE, trace=FALSE)
+a4m5$fit
+a4m5$fit$aic/length(rt)
+```
+ARMA(4,5) has the lowest AIC. The residuals plot appears to be uncorrelated white noise with mean zero and constant variance. ACF of residuals appears to be uncorrelated white noise with fairly low ACFs. NQQ plot of std residuals appears to be Normally distributed as a straight line. Almost all points in the Ljung-Box test are greater than 0.05, so we can accept the null hypothesis that that the fitted model is appropriate. Thus, ARMA(4,5) is a nice model for this and the residuals resemble wn. Thus, we choose ARMA(4,5).
+
+AIC of the model ARMA(4,5) is -3.556 after normalized by dividing it by the number of observations, so we can see that the AIC of the ARMA(4,5) is larger than the AIC -3.774 of GARCH(1,1) model on the normalized scale, so the GARCH(1,1) looks like a better one. Also, I have checked that although ARMA and GARCH models focus on different parameters of the underlying random process, the dependent variable remains the same in both models. Both models specify a distribution of the same dependent variable. However, while ARMA introduces a nonconstant conditional mean, GARCH introduces a nonconstant conditional variance. Despite this difference, the likelihood is calculated for the same dependent variable. Therefore, we can use AIC to compare ARMA and GARCH models. Thus, the best GARCH model GARCH(1,1) looks like a better one than the best ARMA model ARMA(4,5).
+
+# 4
+## arma+garch
+```{r warning=FALSE}
+## AIC and likelihood function does not work for fGARCH model, so I use the tough hand work and assume there is a pattern for the variantion of AIC
+summary(fit<- garchFit(~arma(0,0)+garch(1,0), data=rt, cond.dist='std', trace=FALSE))
+summary(fit<- garchFit(~arma(4,3)+garch(1,0), data=rt, cond.dist='std', trace=FALSE))
+summary(fit<- garchFit(~arma(3,5)+garch(1,0), data=rt, cond.dist='std', trace=FALSE))
+summary(fit<- garchFit(~arma(5,5)+garch(1,0), data=rt, cond.dist='std', trace=FALSE)) # check maximize at arma(5,5)+garch(a,b)
+summary(fit<- garchFit(~arma(5,5)+garch(2,0), data=rt, cond.dist='std', trace=FALSE))
+summary(fit<- garchFit(~arma(5,5)+garch(4,0), data=rt, cond.dist='std', trace=FALSE))
+summary(fit<- garchFit(~arma(5,5)+garch(7,0), data=rt, cond.dist='std', trace=FALSE)) 
+summary(fit<- garchFit(~arma(5,5)+garch(7,1), data=rt, cond.dist='std', trace=FALSE)) # maximize with arma(5,5)+garch(7,0)
+```
+Considering the minor difference between AIC of ARMA and GARCH model we choose, I may try to fit a arma+garch model to see the change. Finally, we get a better AIC -3.802 for ARMA(5,5)+GARCH(7,0), which is better than both ARMA(4,5) and GARCH(1,1) before, so the arma+garch model may be the best here. We can see, since we find both volatility and stationarity in the data, we may not able to decide the best model with either ARMA or GARCH. The combinination of both, the arma+garch can provide us with a better way to explain the data. Also, we may need to compare these models with different data to find different best model for those.
